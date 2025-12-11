@@ -1,4 +1,4 @@
 package io.github.jabejaranovela.githubactivity.service;
 
-public class GitHubEventParser {
+public class GitHubEventsParser {
 }

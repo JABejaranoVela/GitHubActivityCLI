@@ -1,7 +1,6 @@
 package io.github.jabejaranovela.githubactivity.cli;
 
-public class GitHubActivityCLI {
+public class Main {
     public static void main(String[] args) {
-        System.out.println("Hello from GitHubActivityCLI!");
     }
 }

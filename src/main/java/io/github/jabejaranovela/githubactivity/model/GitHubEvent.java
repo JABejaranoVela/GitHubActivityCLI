@@ -6,7 +6,7 @@ import java.time.format.DateTimeFormatter;
 
 /**
  * Clase base que representa un evento genérico de GitHub.
- * Contiene campos comunes y un método abstracto para describir el evento.
+ * Contiene campos comunes y un mét0do abstracto para describir el evento.
  */
 public abstract class GitHubEvent {
     private String repoName;
@@ -21,7 +21,7 @@ public abstract class GitHubEvent {
 
     /**
      * Devuelve una descripción legible del evento, incluyendo fecha y detalles.
-     * Este método será implementado por cada tipo específico de evento.
+     * Este mét0do será implementado por cada tipo específico de evento.
      */
     public abstract String getEventDescription();
 
