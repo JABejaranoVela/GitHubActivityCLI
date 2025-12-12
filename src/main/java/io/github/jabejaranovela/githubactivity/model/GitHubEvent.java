@@ -4,41 +4,30 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 
-/**
- * Clase base que representa un evento genérico de GitHub.
- * Contiene campos comunes y un mét0do abstracto para describir el evento.
- */
-public abstract class GitHubEvent {
-    private String repoName;
-    private Instant createdAt; // Momento en que ocurrió el evento (horaUTC)
-    // Formato de fecha legible (día/mes/año horas:minutos)
-    private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+public class GitHubEvent {
+    private final String type;
+    private final String repoName;
+    private final Instant createdAt;
+    private final int commitCount;
+    private final String action;
 
-    public GitHubEvent(String repoName, Instant createdAt) {
+    private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+
+    public GitHubEvent(String type, String repoName, Instant createdAt, int commitCount, String action) {
+        this.type = type;
         this.repoName = repoName;
         this.createdAt = createdAt;
+        this.commitCount = commitCount;
+        this.action = action;
     }
 
-    /**
-     * Devuelve una descripción legible del evento, incluyendo fecha y detalles.
-     * Este mét0do será implementado por cada tipo específico de evento.
-     */
-    public abstract String getEventDescription();
-
-    public String getRepoName() {
-        return repoName;
-    }
-
-    public Instant getCreatedAt() {
-        return createdAt;
-    }
-
-    /**
-     * Formatea la fecha/hora del evento en una representación legible para mostrar al usuario.
-     */
-    protected String formatDateTime() {
-    // Convertimos Instant (UTC) a hora local del sistema para más legibilidad
-        LocalDateTime localTime = LocalDateTime.ofInstant(createdAt, ZoneId.systemDefault());
-        return localTime.format(DATE_FORMAT);
+    public String getEventDescription() {
+        String date = LocalDateTime.ofInstant(createdAt, ZoneId.systemDefault()).format(FORMATTER);
+        return switch (type) {
+            case "PushEvent" -> date + " - Pushed " + commitCount + " commit(s) to " + repoName;
+            case "IssuesEvent" -> date + " - " + action + " an issue in " + repoName;
+            case "WatchEvent" -> date + " - Starred " + repoName;
+            default -> date + " - Performed " + type + " in " + repoName;
+        };
     }
 }
