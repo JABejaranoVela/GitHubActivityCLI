@@ -5,11 +5,16 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.ArrayList;
+import java.util.List;
 
 public class Main {
+
+    private static final int EVENTS_TO_DISPLAY = 10;
+
     public static void main(String[] args) {
         if (args.length != 1) {
-            System.out.println("Uso: java Main <nombre-de-usuario>");
+            System.out.println("Usage: java Main <github-username>");
             return;
         }
 
@@ -25,93 +30,129 @@ public class Main {
         try {
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
-            System.out.println("Código de respuesta: " + response.statusCode());
+            System.out.println("Status code: " + response.statusCode());
             if (response.statusCode() != 200) {
-                // De momento, si no es 200 solo mostramos el body y salimos
-                System.out.println("Respuesta no OK:");
+                // For now, if it's not 200 we print the body and exit
+                System.out.println("Non-OK response:");
                 System.out.println(response.body());
                 return;
             }
 
-            String body = response.body();
+            String responseBody = response.body().trim();
 
-            String json = body.trim();
-
-            // Comprobamos que es un array JSON: empieza por [ y acaba por ]
-            if (!json.startsWith("[") || !json.endsWith("]")) {
-                System.out.println("Formato inesperado: no es un array JSON.");
+            // Validate this is a JSON array: starts with [ and ends with ]
+            if (!responseBody.startsWith("[") || !responseBody.endsWith("]")) {
+                System.out.println("Unexpected format: response is not a JSON array.");
                 return;
             }
 
-            // Quitamos los corchetes exteriores para trabajar con el contenido
-            json = json.substring(1, json.length() - 1).trim();
+            // Remove outer brackets to work with the array content
+            String eventsArrayContent = responseBody.substring(1, responseBody.length() - 1).trim();
 
-            // Si está vacío, no hay eventos
-            if (json.isEmpty()) {
-                System.out.println("No hay eventos para este usuario.");
+            // If empty, there are no events
+            if (eventsArrayContent.isEmpty()) {
+                System.out.println("No events found for this user.");
                 return;
             }
 
-            // Vamos a intentar quedarnos solo con el primer objeto del array.
-            // Los objetos suelen estar separados por "},{".
-            int separatorIndex = json.indexOf("},{");
-
-            String firstEventJson;
-            if (separatorIndex != -1) {
-                // Hay más de un evento: cogemos desde el primer { hasta justo antes de "},"
-                firstEventJson = json.substring(0, separatorIndex + 1); // incluye la primera }
-            } else {
-                // Solo hay un evento en el array
-                firstEventJson = json;
+            // Extract and print up to N events
+            List<String> events = extractEvents(eventsArrayContent, EVENTS_TO_DISPLAY);
+            for (String eventJson : events) {
+                String line = formatEvent(eventJson);
+                if (line != null) {
+                    System.out.println("- " + line);
+                }
             }
 
-            // Nos aseguramos de que empieza por { y termina por }
-            firstEventJson = firstEventJson.trim();
-            if (!firstEventJson.startsWith("{")) {
-                firstEventJson = "{" + firstEventJson;
-            }
-            if (!firstEventJson.endsWith("}")) {
-                firstEventJson = firstEventJson + "}";
-            }
-
-            // 1. type
-            String type = extractValue(firstEventJson, "\"type\":\"", "\"");
-            if (type == null) {
-                System.out.println("No se pudo encontrar el campo 'type' en el primer evento.");
-                return;
-            }
-
-            // 2. repo.name
-            String repoName = null;
-            int repoIndex = firstEventJson.indexOf("\"repo\":");
-            if (repoIndex != -1) {
-                String repoPart = firstEventJson.substring(repoIndex);
-                repoName = extractValue(repoPart, "\"name\":\"", "\"");
-            }
-
-            if (repoName == null) {
-                System.out.println("No se pudo encontrar el campo 'repo.name' en el primer evento.");
-                return;
-            }
-
-            // 3. Imprimir línea básica
-            System.out.println("- " + type + " in " + repoName);
-
-        } catch (IOException | InterruptedException e) {
-            System.out.println("Error al conectar con la API: " + e.getMessage());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt(); // good practice: restore interrupt flag
+            System.out.println("Request interrupted: " + e.getMessage());
+        } catch (IOException e) {
+            System.out.println("Failed to call GitHub API: " + e.getMessage());
         }
     }
 
     private static String extractValue(String json, String prefix, String terminator) {
-        int start = json.indexOf(prefix);
-        if (start == -1) {
+        int startIndex = json.indexOf(prefix);
+        if (startIndex == -1) {
             return null;
         }
-        start += prefix.length();
-        int end = json.indexOf(terminator, start);
-        if (end == -1) {
+
+        startIndex += prefix.length();
+        int endIndex = json.indexOf(terminator, startIndex);
+        if (endIndex == -1) {
             return null;
         }
-        return json.substring(start, end);
+
+        return json.substring(startIndex, endIndex);
+    }
+
+    private static List<String> extractEvents(String jsonArrayContent, int maxEvents) {
+        List<String> events = new ArrayList<>();
+
+        int cursor = 0;
+        int extractedCount = 0;
+
+        while (extractedCount < maxEvents) {
+            int separatorIndex = jsonArrayContent.indexOf("},{", cursor);
+
+            if (separatorIndex == -1) {
+                // Last (or only) remaining event
+                String lastEventJson = jsonArrayContent.substring(cursor).trim();
+                if (!lastEventJson.isEmpty()) {
+                    events.add(normalizeJsonObject(lastEventJson));
+                }
+                break;
+            }
+
+            String eventJson = jsonArrayContent.substring(cursor, separatorIndex + 1).trim(); // includes the closing }
+            events.add(normalizeJsonObject(eventJson));
+
+            cursor = separatorIndex + 3; // skip "},{"
+            extractedCount++;
+        }
+
+        return events;
+    }
+
+    private static String formatEvent(String eventJson) {
+        if (eventJson == null) {
+            return null;
+        }
+
+        String normalizedEventJson = normalizeJsonObject(eventJson);
+
+        // 1) type
+        String type = extractValue(normalizedEventJson, "\"type\":\"", "\"");
+        if (type == null) {
+            return null;
+        }
+
+        // 2) repo.name
+        int repoIndex = normalizedEventJson.indexOf("\"repo\":");
+        if (repoIndex == -1) {
+            return null;
+        }
+
+        String repoSectionJson = normalizedEventJson.substring(repoIndex);
+        String repoName = extractValue(repoSectionJson, "\"name\":\"", "\"");
+        if (repoName == null) {
+            return null;
+        }
+
+        return type + " in " + repoName;
+    }
+
+    private static String normalizeJsonObject(String jsonObjectText) {
+        String normalized = jsonObjectText.trim();
+
+        // Safety: ensure braces
+        if (!normalized.startsWith("{")) {
+            normalized = "{" + normalized;
+        }
+        if (!normalized.endsWith("}")) {
+            normalized = normalized + "}";
+        }
+        return normalized;
     }
 }
