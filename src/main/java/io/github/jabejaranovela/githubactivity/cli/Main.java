@@ -55,19 +55,20 @@ public class Main {
                 return;
             }
 
-            // Extract and print up to N events
+            // Extract up to N events
             List<String> events = extractEvents(eventsArrayContent, EVENTS_TO_DISPLAY);
-            for (String eventJson : events) {
-                String line = formatEvent(eventJson);
-                if (line != null) {
-                    System.out.println("- " + line);
-                }
-            }
 
-        } catch (InterruptedException e) {
+            // Group and format
+            List<String> lines = groupAndFormatEvents(events);
+            for (String line : lines) {
+                System.out.println("- " + line);
+            }
+        }
+        catch (InterruptedException e) {
             Thread.currentThread().interrupt(); // good practice: restore interrupt flag
             System.out.println("Request interrupted: " + e.getMessage());
-        } catch (IOException e) {
+        }
+        catch (IOException e) {
             System.out.println("Failed to call GitHub API: " + e.getMessage());
         }
     }
@@ -154,5 +155,123 @@ public class Main {
             normalized = normalized + "}";
         }
         return normalized;
+    }
+
+    private static List<String> groupAndFormatEvents(List<String> eventsJson) {
+        List<String> lines = new ArrayList<>();
+        if (eventsJson == null || eventsJson.isEmpty()) {
+            return lines;
+        }
+
+        String currentType = null;
+        String currentRepo = null;
+
+        int currentOccurrences = 0;
+        int currentCommitTotal = 0; // only meaningful for PushEvent
+
+        for (String eventJson : eventsJson) {
+            String normalizedEventJson = normalizeJsonObject(eventJson);
+
+            String type = extractValue(normalizedEventJson, "\"type\":\"", "\"");
+            String repoName = extractRepoName(normalizedEventJson);
+
+            // If we can't parse the minimum required fields, skip this event
+            if (type == null || repoName == null) {
+                continue;
+            }
+
+            boolean sameGroup = type.equals(currentType) && repoName.equals(currentRepo);
+
+            if (!sameGroup) {
+                // Flush previous group
+                if (currentType != null) {
+                    lines.add(formatGroupedLine(currentType, currentRepo, currentOccurrences, currentCommitTotal));
+                }
+
+                // Start new group
+                currentType = type;
+                currentRepo = repoName;
+                currentOccurrences = 0;
+                currentCommitTotal = 0;
+            }
+
+            currentOccurrences++;
+
+            // Optional: for PushEvent, accumulate commits using payload.size when present
+            if ("PushEvent".equals(type)) {
+                Integer pushSize = extractPushCommitCount(normalizedEventJson);
+                if (pushSize != null) {
+                    currentCommitTotal += pushSize;
+                }
+            }
+        }
+
+        // Flush last group
+        if (currentType != null) {
+            lines.add(formatGroupedLine(currentType, currentRepo, currentOccurrences, currentCommitTotal));
+        }
+
+        return lines;
+    }
+
+    private static String extractRepoName(String normalizedEventJson) {
+        int repoIndex = normalizedEventJson.indexOf("\"repo\":");
+        if (repoIndex == -1) {
+            return null;
+        }
+        String repoSectionJson = normalizedEventJson.substring(repoIndex);
+        return extractValue(repoSectionJson, "\"name\":\"", "\"");
+    }
+
+    private static Integer extractPushCommitCount(String normalizedEventJson) {
+        int payloadIndex = normalizedEventJson.indexOf("\"payload\":");
+        if (payloadIndex == -1) {
+            return null;
+        }
+        String payloadSectionJson = normalizedEventJson.substring(payloadIndex);
+        return extractIntValue(payloadSectionJson, "\"size\":");
+    }
+
+    private static Integer extractIntValue(String json, String prefix) {
+        int startIndex = json.indexOf(prefix);
+        if (startIndex == -1) {
+            return null;
+        }
+
+        startIndex += prefix.length();
+
+        while (startIndex < json.length() && Character.isWhitespace(json.charAt(startIndex))) {
+            startIndex++;
+        }
+
+        int endIndex = startIndex;
+        while (endIndex < json.length() && Character.isDigit(json.charAt(endIndex))) {
+            endIndex++;
+        }
+
+        if (endIndex == startIndex) {
+            return null;
+        }
+
+        try {
+            return Integer.parseInt(json.substring(startIndex, endIndex));
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private static String formatGroupedLine(String type, String repoName, int occurrences, int commitTotal) {
+        if ("PushEvent".equals(type)) {
+            // If payload.size was available, use it; otherwise fallback to number of events
+            int commits = (commitTotal > 0) ? commitTotal : occurrences;
+            String commitWord = (commits == 1) ? "commit" : "commits";
+            return "Pushed " + commits + " " + commitWord + " to " + repoName;
+        }
+
+        // Generic grouping for any other event type
+        if (occurrences == 1) {
+            return type + " in " + repoName;
+        }
+        return type + " x" + occurrences + " in " + repoName;
     }
 }
