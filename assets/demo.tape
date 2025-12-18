@@ -47,7 +47,7 @@ Show
 # 1) Show usage (no args)
 Type 'mvn -q exec:java -Dexec.mainClass="io.github.jabejaranovela.githubactivity.cli.Main"'
 Enter
-Sleep 2500ms
+Sleep 3500ms
 
 Type "clear"
 Enter

@@ -1,5 +1,7 @@
 # GitHub Activity CLI
 
+![GitHub Activity CLI demo](assets/github-activity-cli-demo.gif)
+
 ## Description
 
 `GitHubActivityCLI` is a small command-line application written in **Java** that fetches and prints the most recent public activity of a GitHub user using the GitHub REST API.
